@@ -303,12 +303,17 @@ if __name__ == "__main__":
     
     # Rating distribution
     from collections import Counter
-    train_ratings = Counter([ex['rating'] for ex in train_formatted])
+    train_ratings = Counter([ex.get('rating') for ex in train_formatted])
     print(f"\nRating distribution (train):")
-    for rating in sorted(train_ratings.keys()):
+    for rating in sorted([r for r in train_ratings.keys() if r is not None]):
         count = train_ratings[rating]
         pct = 100 * count / len(train_formatted)
         print(f"  Rating {rating}: {count} ({pct:.1f}%)")
+    
+    # Check for None ratings
+    none_count = train_ratings.get(None, 0)
+    if none_count > 0:
+        print(f"  Rating None: {none_count} ({100 * none_count / len(train_formatted):.1f}%)")
     
     # Sample example
     print("\n" + "="*70)
