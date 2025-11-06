@@ -161,8 +161,7 @@ trainer = SFTTrainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=test_dataset,
-    formatting_func=formatting_func,
-    max_seq_length=1024,
+    formatting_func=formatting_func
 )
 
 print("✅ Trainer configured!")
