@@ -21,7 +21,7 @@ def load_prm800k_direct(split="all", cache_dir=None, limit=None):
     Returns:
         Dataset or DatasetDict depending on split
     """
-    repo_id = "peiyi9979/math-shepherd-prm800k"
+    repo_id = "tasksource/PRM800K"
     
     # Define files for each split
     files = {
