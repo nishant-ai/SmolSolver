@@ -13,6 +13,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     TrainingArguments,
+    TrainerCallback  # <-- Import the base callback
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer
@@ -101,7 +102,7 @@ lora_config = LoraConfig(
     # Target the "brain" (MLP layers) in addition to attention layers
     # This is critical for reasoning tasks.
     target_modules=[
-        "q_proj",
+        "q_Sameproj",
         "k_proj",
         "v_proj",
         "dense",
@@ -123,12 +124,53 @@ print(f"Trainable params: {trainable_params:,} || All params: {all_params:,} || 
 print("   (This trainable % will be higher than before, this is the goal!)")
 
 # ============================================================================
-# 5. TRAINING CONFIGURATION (Optimized for A100 Speed)
+# 5. CUSTOM CALLBACK FOR REAL-TIME LOGGING
+# ============================================================================
+print("\n📝Setting up real-time JSON log callback...")
+
+# We'll save logs to a .jsonl file (JSON Lines)
+# This allows us to append one JSON object per line, which is great for streaming.
+NEW_OUTPUT_DIR = "./phi2-prm-r64"
+LOG_FILE_PATH = f"{NEW_OUTPUT_DIR}/training_log_history.jsonl"
+
+class JsonLogCallback(TrainerCallback):
+    """
+    A custom callback that saves logs to a JSON Lines file in real-time.
+    """
+    def __init__(self, log_file_path):
+        self.log_file_path = log_file_path
+        # Clear the file in case of a new run (vs. a resume)
+        # We'll open in 'w' (write) mode first to clear it.
+        try:
+            with open(self.log_file_path, "w") as f:
+                f.write("") # Just create or clear the file
+            print(f"   Real-time log file initialized at: {self.log_file_path}")
+        except IOError as e:
+            print(f"   Error: Could not initialize log file: {e}")
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """
+        Called by the Trainer every time a log is generated.
+        """
+        if logs is not None:
+            # Open the file in 'a' (append) mode and write the new log
+            try:
+                with open(self.log_file_path, "a") as f:
+                    f.write(json.dumps(logs) + "\n")
+            except IOError as e:
+                print(f"   Error: Could not write to log file: {e}")
+
+# Create an instance of our callback
+json_log_callback = JsonLogCallback(LOG_FILE_PATH)
+
+
+# ============================================================================
+# 6. TRAINING CONFIGURATION (Optimized for A100 Speed)
 # ============================================================================
 print("\n🔧 Setting up A100-optimized training configuration...")
 
 # We'll create a new output directory for this new run
-NEW_OUTPUT_DIR = "./phi2-prm-r64"
+# NEW_OUTPUT_DIR = "./phi2-prm-r64" # <-- Moved this up
 print(f"   Saving checkpoints to: {NEW_OUTPUT_DIR}")
 
 training_args = TrainingArguments(
@@ -175,13 +217,14 @@ trainer = SFTTrainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=test_dataset,
-    formatting_func=formatting_func
+    formatting_func=formatting_func,
+    callbacks=[json_log_callback]  # <-- Pass the callback to the trainer
 )
 
 print("✅ Trainer configured!")
 
 # ============================================================================
-# 6. START TRAINING
+# 7. START TRAINING
 # ============================================================================
 print("\n" + "="*70)
 print("🚀 STARTING NEW HIGH-CAPACITY TRAINING (FROM SCRATCH)")
@@ -215,9 +258,12 @@ tokenizer.save_pretrained(FINAL_MODEL_PATH)
 
 print(f"✅ Model saved to {FINAL_MODEL_PATH}")
 
-# =================================S===========================================
-# 8. SAVE TRAINING INFO
 # ============================================================================
+# 8. SAVE METADATA (INFO & LOGS)
+# ============================================================================
+
+# --- Save basic training info ---
+print("\n💾 Saving training info...")
 training_info = {
     "model": "microsoft/phi-2",
     "dataset": "PRM800K",
@@ -236,7 +282,14 @@ training_info = {
 with open(f"{FINAL_MODEL_PATH}/training_info.json", "w") as f:
     json.dump(training_info, f, indent=2)
 
-print("\n✅ Training info saved!")
+print("✅ Training info saved!")
+
+# --- Save full log history ---
+# We no longer need to dump the log history at the end,
+# as our callback has been saving it in real-time all along.
+print("\n💾 Full training log history was saved in real-time to:")
+print(f"   {LOG_FILE_PATH}")
+
 
 # ============================================================================
 # 9. CREATE ARCHIVE FOR DOWNLOAD
